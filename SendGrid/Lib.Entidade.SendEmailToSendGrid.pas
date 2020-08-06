@@ -61,7 +61,6 @@ implementation
 
 uses
   MyFunctionsUtils
-  //, uFunctionMySendEmailToSendGrid
   , System.IOUtils
   , REST.Client
   , REST.Types
@@ -107,15 +106,7 @@ begin
 end;
 
 function TSendEmailToSendGrid.SendEmail: boolean;
-var
-  lFileLog: TFileName;
 begin
-  {$IFDEF DEBUG}
-  lFileLog:=TPath.Combine('C:\temp',FormatDateTime('yyyymmddhhnnss".log"',Now));
-  {$ELSE}
-  lFileLog:=TPath.Combine('C:\inetpub\wwwroot\srvawsls01.isapps.com.br\www\temp',FormatDateTime('yyyymmddhhnnss".log"',Now));
-  {$ENDIF}
-
   Result:=False;
   if FEmailTo.Count=0 then
     Exception.Create('Email To não informado')
@@ -125,16 +116,15 @@ begin
     Exception.Create('Mensagem não informada')
   else if FSubject=EmptyStr then
     Exception.Create('Assunto não informada')
-  //else if not SendEmailToSendGrid( PAnsiChar( AnsiString ( GetBodyRequestSendGrid ) ), PAnsiChar( AnsiString ( lFileLog ) ) ) then
   else if not RequestToSendGrid( GetBodyRequestSendGrid ) then
     Exception.Create('Email não enviado')
   else
     Result:=True;
 end;
 
-function TSendEmailToSendGrid.GetBodyRequestSendGrid: TJSONObject; //string;
+function TSendEmailToSendGrid.GetBodyRequestSendGrid: TJSONObject; 
 var
-  lBody, lFrom: TJSONObject;
+  lFrom: TJSONObject;
   lContent, lTo, lCC, lBCC, lArrayPersonalizations: TJSONArray;
   lPersonalizations: TJSONPair;
 
@@ -149,7 +139,6 @@ var
 begin
 
   Result:=TJSONObject.Create;
-  //lBody:=TJSONObject.Create;
   lContent:=TJSONArray.Create;
   lTo:=TJSONArray.Create;
   lCC:=TJSONArray.Create;
@@ -157,59 +146,31 @@ begin
   lFrom:=TJSONObject.Create;
   lArrayPersonalizations:=TJSONArray.Create;
   lPersonalizations:=TJSONPair.Create('personalizations',lArrayPersonalizations);
-  try
 
-    AddEmailsInArray(lTo,FEmailTo);
-    AddEmailsInArray(lCC,FEmailCC);
-    AddEmailsInArray(lBCC,FEmailBCC);
+  AddEmailsInArray(lTo,FEmailTo);
+  AddEmailsInArray(lCC,FEmailCC);
+  AddEmailsInArray(lBCC,FEmailBCC);
 
-    lFrom.AddPair('email',FFrom);
-    if FNameFrom<>EmptyStr then
-      lFrom.AddPair('name',FNameFrom);
+  lFrom.AddPair('email',FFrom);
+  if FNameFrom<>EmptyStr then
+    lFrom.AddPair('name',FNameFrom);
 
-    lContent.AddElement( TJSONObject.Create
-                           .AddPair('type',FContentType)
-                           .AddPair('value',FMessage) );
+  lContent.AddElement( TJSONObject.Create
+                         .AddPair('type',FContentType)
+                         .AddPair('value',FMessage) );
 
-    lArrayPersonalizations
-      .AddElement( TJSONObject.Create
-                     .AddPair( 'to' , lTo )
-                     .AddPair( 'cc' , lCC )
-                     .AddPair( 'bcc' , lBCC )
-                 );
+  lArrayPersonalizations
+    .AddElement( TJSONObject.Create
+                   .AddPair( 'to' , lTo )
+                   .AddPair( 'cc' , lCC )
+                   .AddPair( 'bcc' , lBCC )
+               );
 
-    //lBody
-    Result
-      .AddPair( lPersonalizations )
-      .AddPair( 'from', lFrom )
-      .AddPair( 'subject',FSubject )
-      .AddPair( 'content', lContent );
-
-    //Result:=lBody.ToString;
-    //Result:=lBody;
-
-    //TMyLog.SaveLog(Result);
-
-  finally
-
-    {if Assigned(lBCC) then
-      FreeAndNil(lBCC);
-    if Assigned(lCC) then
-      FreeAndNil(lCC);
-    if Assigned(lTo) then
-      FreeAndNil(lTo);
-    if Assigned(lFrom) then
-      FreeAndNil(lFrom);
-    if Assigned(lContent) then
-      FreeAndNil(lContent);}
-    {if Assigned(lArrayPersonalizations) then
-      FreeAndNil(lArrayPersonalizations);
-    if Assigned(lPersonalizations) then
-      FreeAndNil(lPersonalizations);}
-    {if Assigned(lBody) then
-      FreeAndNil(lBody);}
-
-  end;
+  Result
+    .AddPair( lPersonalizations )
+    .AddPair( 'from', lFrom )
+    .AddPair( 'subject',FSubject )
+    .AddPair( 'content', lContent );
 
 end;
 
@@ -290,7 +251,7 @@ begin
     lRESTRequest.Params.AddBody(aBodyContent);
     lRESTRequest.Execute;
 
-    Result:=lRESTResponse.StatusCode in [200,202]
+    Result:=lRESTResponse.StatusCode in [200,202];
 
   finally
     FreeAndNil(lRESTRequest);

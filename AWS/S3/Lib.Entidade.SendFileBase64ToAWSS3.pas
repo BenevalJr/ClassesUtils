@@ -73,8 +73,6 @@ var
   lResponse            : TCloudResponseInfo;
   lAWSConnectionInfo   : TAmazonConnectionInfo;
   lS3                  : TAmazonStorageService;
-  //lS3Region            : TAmazonRegion;
-  //lRegion              : string;
 
   lFileContent         : TBytes;
   lReader              : TBinaryReader;
@@ -103,14 +101,12 @@ begin
 
 
   lS3                  := TAmazonStorageService.Create(lAWSConnectionInfo);
-  //lRegion              := TAmazonStorageService.GetRegionString(lS3Region);
 
   try
 
     LInput.Position := 0;
     TNetEncoding.Base64.Decode( LInput, LOutput );
     LOutput.Position := 0;
-    //LOutput.SaveToFile( aFileName );
 
     lReader := TBinaryReader.Create( LOutput );
     try
@@ -122,23 +118,14 @@ begin
     lMeta.Values['Content-Type']  :=lContentType;
     lHeader.Values['Content-Type']:=lContentType;
 
-    try
-      Result:=lS3.UploadObject( FBucketName,
-                                FFileName,
-                                lFileContent,
-                                False,
-                                lMeta,
-                                lHeader,
-                                amzbaPublicReadWrite,
-                                lResponse );
-    except
-      on E: Exception do
-      begin
-        Result:=False;
-        TMyLog.SaveLog(E.Message);
-      end;
-
-    end;
+    Result:=lS3.UploadObject( FBucketName,
+                              FFileName,
+                              lFileContent,
+                              False,
+                              lMeta,
+                              lHeader,
+                              amzbaPublicReadWrite,
+                              lResponse );
 
   finally
     lMeta.Free;
