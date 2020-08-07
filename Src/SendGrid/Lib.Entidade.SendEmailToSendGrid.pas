@@ -19,6 +19,7 @@ type
     function SetSubject( const aSubject: string ): ISendEmailToSendGrid;
     function SetContentType( const aContentType: string ): ISendEmailToSendGrid;
     function SetMessage( const aMessage: string ): ISendEmailToSendGrid;
+    function ErrorMessage: string;
     function SendEmail: boolean;
   end;
 
@@ -35,10 +36,12 @@ type
     FContentType: string;
     FMessage: string;
     FSendGridKey: string;
+    FErrorMessage: string;
 
     procedure AddEmailIn( aListEmail: TStrings; const aEmailTo: string );
     function GetBodyRequestSendGrid: TJSONObject;
     function RequestToSendGrid( aBodyContent: TJSONObject ): boolean;
+    function LoadBase64File(const aFileName: TFileName): string;
   public
     { public declarations }
     class function New( aSendGridKey: string ): ISendEmailToSendGrid;
@@ -54,14 +57,15 @@ type
     function SetSubject( const aSubject: string ): ISendEmailToSendGrid;
     function SetContentType( const aContentType: string ): ISendEmailToSendGrid;
     function SetMessage( const aMessage: string ): ISendEmailToSendGrid;
+    function ErrorMessage: string;
     function SendEmail: boolean;
   end;
 
 implementation
 
 uses
-  MyFunctionsUtils
-  , System.IOUtils
+  System.IOUtils
+  , System.NetEncoding
   , REST.Client
   , REST.Types
   ;
@@ -69,6 +73,25 @@ uses
 class function TSendEmailToSendGrid.New( aSendGridKey: string ): ISendEmailToSendGrid;
 begin
   Result := Self.Create( aSendGridKey );
+end;
+
+constructor TSendEmailToSendGrid.Create( aSendGridKey: string );
+begin
+  FEmailTo:=TStringList.Create;
+  FEmailCC:=TStringList.Create;
+  FEmailBCC:=TStringList.Create;
+  FAttachFile:=TStringList.Create;
+  FContentType:='text/plain';
+  FSendGridKey:=aSendGridKey;
+end;
+
+destructor TSendEmailToSendGrid.Destroy;
+begin
+  FreeAndNil(FAttachFile);
+  FreeAndNil(FEmailBCC);
+  FreeAndNil(FEmailCC);
+  FreeAndNil(FEmailTo);
+  inherited;
 end;
 
 function TSendEmailToSendGrid.AddAttachFile(
@@ -106,27 +129,49 @@ begin
 end;
 
 function TSendEmailToSendGrid.SendEmail: boolean;
+var
+  lBodyContent: TJSONObject;
 begin
-  Result:=False;
-  if FEmailTo.Count=0 then
-    Exception.Create('Email To não informado')
-  else if FFrom=EmptyStr then
-    Exception.Create('Email From não informado')
-  else if FMessage=EmptyStr then
-    Exception.Create('Mensagem não informada')
-  else if FSubject=EmptyStr then
-    Exception.Create('Assunto não informada')
-  else if not RequestToSendGrid( GetBodyRequestSendGrid ) then
-    Exception.Create('Email não enviado')
-  else
-    Result:=True;
+
+  try
+
+    if FEmailTo.Count=0 then
+      Exception.Create('Email To não informado')
+    else if FFrom=EmptyStr then
+      Exception.Create('Email From não informado')
+    else if FMessage=EmptyStr then
+      Exception.Create('Mensagem não informada')
+    else if FSubject=EmptyStr then
+      Exception.Create('Assunto não informada');
+
+    lBodyContent:=GetBodyRequestSendGrid;
+    try
+      if RequestToSendGrid( lBodyContent ) then
+        Result:=True
+      else
+        Result:=False;
+    finally
+      FreeAndNil(lBodyContent);
+    end;
+
+  except
+    on E:Exception do
+    begin
+      Result:=False;
+      FErrorMessage:=E.Message;
+    end;
+
+  end;
+
 end;
 
 function TSendEmailToSendGrid.GetBodyRequestSendGrid: TJSONObject; 
 var
   lFrom: TJSONObject;
-  lContent, lTo, lCC, lBCC, lArrayPersonalizations: TJSONArray;
+  lContent, lAttachments, lTo, lCC, lBCC: TJSONArray;
+  lArrayPersonalizations: TJSONArray;
   lPersonalizations: TJSONPair;
+  i: integer;
 
   procedure AddEmailsInArray( aJSONArray: TJSONArray; aListEmails: TStrings );
   var
@@ -139,6 +184,8 @@ var
 begin
 
   Result:=TJSONObject.Create;
+
+  lAttachments:=TJSONArray.Create;
   lContent:=TJSONArray.Create;
   lTo:=TJSONArray.Create;
   lCC:=TJSONArray.Create;
@@ -147,30 +194,59 @@ begin
   lArrayPersonalizations:=TJSONArray.Create;
   lPersonalizations:=TJSONPair.Create('personalizations',lArrayPersonalizations);
 
-  AddEmailsInArray(lTo,FEmailTo);
-  AddEmailsInArray(lCC,FEmailCC);
-  AddEmailsInArray(lBCC,FEmailBCC);
+  //try
 
-  lFrom.AddPair('email',FFrom);
-  if FNameFrom<>EmptyStr then
-    lFrom.AddPair('name',FNameFrom);
+    AddEmailsInArray(lTo,FEmailTo);
+    AddEmailsInArray(lCC,FEmailCC);
+    AddEmailsInArray(lBCC,FEmailBCC);
 
-  lContent.AddElement( TJSONObject.Create
-                         .AddPair('type',FContentType)
-                         .AddPair('value',FMessage) );
+    lFrom.AddPair('email',FFrom);
+    if FNameFrom<>EmptyStr then
+      lFrom.AddPair('name',FNameFrom);
 
-  lArrayPersonalizations
-    .AddElement( TJSONObject.Create
-                   .AddPair( 'to' , lTo )
-                   .AddPair( 'cc' , lCC )
-                   .AddPair( 'bcc' , lBCC )
-               );
+    lContent.AddElement( TJSONObject.Create
+                           .AddPair('type',FContentType)
+                           .AddPair('value',FMessage) );
 
-  Result
-    .AddPair( lPersonalizations )
-    .AddPair( 'from', lFrom )
-    .AddPair( 'subject',FSubject )
-    .AddPair( 'content', lContent );
+    lArrayPersonalizations
+      .AddElement( TJSONObject.Create
+                     .AddPair( 'to' , lTo )
+                     .AddPair( 'cc' , lCC )
+                     .AddPair( 'bcc' , lBCC )
+                 );
+
+    for i := 0 to FAttachFile.Count-1 do
+      lAttachments.AddElement( TJSONObject.Create
+                                 .AddPair('content',LoadBase64File(FAttachFile[i]))
+                                 .AddPair('filename',ExtractFileName(FAttachFile[i])) );
+
+    Result
+      .AddPair( lPersonalizations )
+      .AddPair( 'from',    lFrom )
+      .AddPair( 'subject', FSubject )
+      .AddPair( 'content', lContent );
+
+    if FAttachFile.Count>0 then
+      Result.AddPair( 'attachments', lAttachments );
+
+  //finally
+
+    {if Assigned(lBCC) then
+      FreeAndNil(lBCC);
+    if Assigned(lCC) then
+      FreeAndNil(lCC);
+    if Assigned(lTo) then
+      FreeAndNil(lTo);
+    if Assigned(lFrom) then
+      FreeAndNil(lFrom);
+    if Assigned(lContent) then
+      FreeAndNil(lContent);
+    if Assigned(lArrayPersonalizations) then
+      FreeAndNil(lArrayPersonalizations);
+    if Assigned(lPersonalizations) then
+      FreeAndNil(lPersonalizations);}
+
+  //end;
 
 end;
 
@@ -208,23 +284,9 @@ begin
   FSubject:=aSubject;
 end;
 
-constructor TSendEmailToSendGrid.Create( aSendGridKey: string );
+function TSendEmailToSendGrid.ErrorMessage: string;
 begin
-  FEmailTo:=TStringList.Create;
-  FEmailCC:=TStringList.Create;
-  FEmailBCC:=TStringList.Create;
-  FAttachFile:=TStringList.Create;
-  FContentType:='text/plain';
-  FSendGridKey:=aSendGridKey;
-end;
-
-destructor TSendEmailToSendGrid.Destroy;
-begin
-  FreeAndNil(FAttachFile);
-  FreeAndNil(FEmailBCC);
-  FreeAndNil(FEmailCC);
-  FreeAndNil(FEmailTo);
-  inherited;
+  Result:=FErrorMessage;
 end;
 
 function TSendEmailToSendGrid.RequestToSendGrid( aBodyContent: TJSONObject ): boolean;
@@ -253,12 +315,36 @@ begin
 
     Result:=lRESTResponse.StatusCode in [200,202];
 
+    if not Result then
+      FErrorMessage:=lRESTResponse.ErrorMessage;
+
   finally
     FreeAndNil(lRESTRequest);
     FreeAndNil(lRESTResponse);
     FreeAndNil(lRESTClient);
   end;
 
+end;
+
+function TSendEmailToSendGrid.LoadBase64File( const aFileName: TFileName): string;
+var
+  LInput : TMemoryStream;
+  LOutput: TMemoryStream;
+  lStringOutput: string;
+begin
+  LInput := TMemoryStream.Create;
+  LOutput := TMemoryStream.Create;
+  try
+    LInput.LoadFromFile(aFileName);
+    LInput.Position := 0;
+    TNetEncoding.Base64.Encode( LInput, LOutput );
+    LOutput.Position := 0;
+    SetString(lStringOutput, PAnsiChar(LOutput.Memory), LOutput.Size);
+    Result:=AnsiString( lStringOutput );
+  finally
+    LInput.Free;
+    LOutput.Free;
+  end;
 end;
 
 end.

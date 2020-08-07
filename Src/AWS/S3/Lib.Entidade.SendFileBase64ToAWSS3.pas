@@ -44,8 +44,12 @@ type
 implementation
 
 uses
-  System.Classes, Data.Cloud.CloudAPI, System.SysUtils,
-  System.RegularExpressions, System.NetEncoding, MyFunctionsUtils;
+  System.Classes
+  , Data.Cloud.CloudAPI
+  , System.SysUtils
+  , System.RegularExpressions
+  , System.NetEncoding
+  ;
 
 class function TSendFileBase64ToAWSS3.New: ISendFileBase64ToAWSS3;
 begin
